@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <title>Space Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     html, body {
       margin: 0;
       padding: 0;
       overflow: hidden;
       background: black;
+      touch-action: manipulation; /* Verhindert das Standard-Touch-Verhalten */
     }
     canvas {
       display: block;
@@ -28,11 +30,64 @@
       z-index: 10;
       text-shadow: 2px 2px 4px black;
     }
+    #mobile-controls {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      display: none; /* Standardmäßig ausgeblendet, wird per JS aktiviert */
+      z-index: 20;
+    }
+    #joystick-container {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 150px;
+      height: 150px;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #joystick {
+      width: 80px;
+      height: 80px;
+      background-color: rgba(255, 255, 255, 0.7);
+      border-radius: 50%;
+      position: absolute;
+      touch-action: none; /* Verhindert Scrolling */
+    }
+    #shoot-button {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 100px;
+      height: 100px;
+      background-color: rgba(255, 0, 0, 0.6);
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-family: 'Gothic', sans-serif;
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px black;
+      user-select: none; /* Verhindert Textauswahl */
+    }
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="hud">Leben: <span id="lives">3</span> | Score: <span id="score">0</span></div>
+<div id="hud">Leben: <span id="lives">3</span> | Score: <span id="score">0</span> | Schild: <span id="shield-time">0</span></div>
+
+<div id="mobile-controls">
+  <div id="joystick-container">
+    <div id="joystick"></div>
+  </div>
+  <div id="shoot-button">FEUER</div>
+</div>
 
 <script>
 const canvas = document.getElementById("game");
@@ -45,9 +100,21 @@ let keys = {};
 let lives = 3;
 let score = 0;
 let powerUps = [];
+let particles = []; // Für den Feuerschweif
+let shieldActive = false;
+let shieldTimer = 0;
 
+const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+
+// HUD-Elemente aktualisieren
 document.getElementById("lives").textContent = lives;
 document.getElementById("score").textContent = score;
+document.getElementById("shield-time").textContent = shieldTimer;
+
+// Mobile Steuerung anzeigen, wenn auf Mobilgerät
+if (isMobile) {
+  document.getElementById("mobile-controls").style.display = "block";
+}
 
 let stars = [];
 for (let i = 0; i < 150; i++) {
@@ -71,15 +138,43 @@ class Ship {
   }
 
   update() {
-    this.angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
-    if (keys["w"]) {
+    // Maussteuerung für PC, Joystick für Mobile
+    if (!isMobile) {
+      this.angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+    } else {
+      // Joystick-Steuerung
+      const joystickCenterX = joystickContainer.offsetLeft + joystickContainer.clientWidth / 2;
+      const joystickCenterY = joystickContainer.offsetTop + joystickContainer.clientHeight / 2;
+      const dxJoy = joystick.offsetLeft + joystick.clientWidth / 2 - joystickCenterX;
+      const dyJoy = joystick.offsetTop + joystick.clientHeight / 2 - joystickCenterY;
+
+      if (Math.abs(dxJoy) > 5 || Math.abs(dyJoy) > 5) { // Schwellenwert für Bewegung
+          this.angle = Math.atan2(dyJoy, dxJoy);
+          this.vel.x += Math.cos(this.angle) * 0.2;
+          this.vel.y += Math.sin(this.angle) * 0.2;
+      }
+    }
+
+
+    if (keys["w"]) { // PC-Bewegung
       this.vel.x += Math.cos(this.angle) * 0.2;
       this.vel.y += Math.sin(this.angle) * 0.2;
     }
+
     this.vel.x *= 0.92;
     this.vel.y *= 0.92;
     this.x += this.vel.x;
     this.y += this.vel.y;
+
+    // Partikel für den Feuerschweif erzeugen
+    if (keys["w"] || (isMobile && (Math.abs(joystick.offsetLeft + joystick.clientWidth / 2 - (joystickContainer.offsetLeft + joystickContainer.clientWidth / 2)) > 5 || Math.abs(joystick.offsetTop + joystick.clientHeight / 2 - (joystickContainer.offsetTop + joystickContainer.clientHeight / 2)) > 5))) {
+      for (let i = 0; i < 2; i++) {
+        const offsetAngle = this.angle + Math.PI + (Math.random() - 0.5) * 0.6; // Hinter dem Schiff
+        const speed = Math.random() * 3 + 1;
+        particles.push(new Particle(this.x - Math.cos(this.angle) * 15, this.y - Math.sin(this.angle) * 15, offsetAngle, speed));
+      }
+    }
+
 
     for (let star of stars) {
       star.x -= this.vel.x * star.speed;
@@ -100,13 +195,21 @@ class Ship {
     } else {
       this.doubleShot = false;
     }
+
+    if (shieldActive && shieldTimer > 0) {
+        shieldTimer--;
+        document.getElementById("shield-time").textContent = Math.ceil(shieldTimer / 60); // In Sekunden anzeigen
+    } else {
+        shieldActive = false;
+        document.getElementById("shield-time").textContent = 0;
+    }
   }
 
   draw() {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    if (keys["w"]) {
+    if (keys["w"] || (isMobile && (Math.abs(joystick.offsetLeft + joystick.clientWidth / 2 - (joystickContainer.offsetLeft + joystickContainer.clientWidth / 2)) > 5 || Math.abs(joystick.offsetTop + joystick.clientHeight / 2 - (joystickContainer.offsetTop + joystickContainer.clientHeight / 2)) > 5))) {
       for (let i = 0; i < 3; i++) {
         const flicker = Math.random() * 10 + 10;
         const offset = (Math.random() - 0.5) * 4;
@@ -114,7 +217,7 @@ class Ship {
         ctx.moveTo(-15, offset - 4);
         ctx.lineTo(-15 - flicker, 0);
         ctx.lineTo(-15, offset + 4);
-        ctx.fillStyle = `hsl(${Math.random() * 30 + 20}, 100%, 50%)`;
+        ctx.fillStyle = `hsl(${Math.random() * 30 + 20}, 100%, 50%)`; // Korrigierte Syntax
         ctx.fill();
       }
     }
@@ -127,7 +230,44 @@ class Ship {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+
+    if (shieldActive) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 10, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(0, 200, 255, 0.7)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
   }
+}
+
+class Particle {
+    constructor(x, y, angle, speed) {
+        this.x = x;
+        this.y = y;
+        this.velX = Math.cos(angle) * speed;
+        this.velY = Math.sin(angle) * speed;
+        this.alpha = 1;
+        this.size = Math.random() * 5 + 2;
+        this.color = `hsl(${Math.random() * 30 + 10}, 100%, 50%)`;
+    }
+
+    update() {
+        this.x += this.velX;
+        this.y += this.velY;
+        this.alpha -= 0.02; // Partikel verblassen lassen
+        this.size *= 0.95; // Partikel schrumpfen lassen
+    }
+
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
 }
 
 class Bullet {
@@ -190,7 +330,14 @@ class Enemy {
   }
 
   update(target) {
-    this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+    // Gegner schaut fast immer zum Spieler
+    const targetAngle = Math.atan2(target.y - this.y, target.x - this.x);
+    // Sanfteres Anpassen des Winkels für realistischere Bewegung
+    let angleDiff = targetAngle - this.angle;
+    if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    this.angle += angleDiff * 0.1; // Passt die Drehgeschwindigkeit an
+
     this.x += Math.cos(this.angle) * this.speed;
     this.y += Math.sin(this.angle) * this.speed;
   }
@@ -230,7 +377,7 @@ class PowerUp {
       ctx.font = "16px monospace";
       ctx.textAlign = "center";
       ctx.fillText("+", 0, 6);
-    } else {
+    } else if (this.type === "double") {
       ctx.fillStyle = "gold";
       ctx.beginPath();
       ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
@@ -239,6 +386,15 @@ class PowerUp {
       ctx.font = "14px monospace";
       ctx.textAlign = "center";
       ctx.fillText("2x", 0, 6);
+    } else if (this.type === "shield") {
+      ctx.fillStyle = "blue";
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "white";
+      ctx.font = "16px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("S", 0, 6);
     }
     ctx.restore();
   }
@@ -258,6 +414,16 @@ function gameLoop() {
   ctx.fillStyle = "white";
   for (let star of stars) {
     ctx.fillRect(star.x, star.y, star.size, star.size);
+  }
+
+  // Partikel aktualisieren und zeichnen
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.update();
+    p.draw();
+    if (p.alpha <= 0.05 || p.size <= 0.5) {
+      particles.splice(i, 1);
+    }
   }
 
   ship.update();
@@ -280,12 +446,16 @@ function gameLoop() {
     const dy = e.y - ship.y;
     const dist = Math.hypot(dx, dy);
     if (dist < e.radius + ship.radius) {
-      enemies.splice(i, 1);
-      lives--;
-      document.getElementById("lives").textContent = lives;
-      if (lives <= 0) {
-        alert("Game Over\nFinaler Score: " + score);
-        window.location.reload();
+      if (shieldActive) {
+        enemies.splice(i, 1); // Gegner wird zerstört, wenn Schild aktiv ist
+      } else {
+        enemies.splice(i, 1);
+        lives--;
+        document.getElementById("lives").textContent = lives;
+        if (lives <= 0) {
+          alert("Game Over\nFinaler Score: " + score);
+          window.location.reload();
+        }
       }
       continue;
     }
@@ -306,7 +476,8 @@ function gameLoop() {
 
   powerTimer++;
   if (powerTimer > 600) {
-    const type = Math.random() < 0.5 ? "life" : "double";
+    const types = ["life", "double", "shield"];
+    const type = types[Math.floor(Math.random() * types.length)];
     powerUps.push(new PowerUp(type));
     powerTimer = 0;
   }
@@ -322,7 +493,11 @@ function gameLoop() {
         document.getElementById("lives").textContent = lives;
       } else if (p.type === "double") {
         ship.doubleShot = true;
-        ship.doubleTimer = 600;
+        ship.doubleTimer = 600; // 10 Sekunden
+      } else if (p.type === "shield") {
+        shieldActive = true;
+        shieldTimer = 600; // 10 Sekunden
+        document.getElementById("shield-time").textContent = Math.ceil(shieldTimer / 60);
       }
       powerUps.splice(i, 1);
     }
@@ -342,28 +517,102 @@ function gameLoop() {
 
 gameLoop();
 
+// PC-Steuerung
 document.addEventListener("mousemove", e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
+  if (!isMobile) {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+  }
 });
 
 document.addEventListener("keydown", e => {
-  keys[e.key.toLowerCase()] = true;
+  if (!isMobile) {
+    keys[e.key.toLowerCase()] = true;
+  }
 });
 
 document.addEventListener("keyup", e => {
-  keys[e.key.toLowerCase()] = false;
+  if (!isMobile) {
+    keys[e.key.toLowerCase()] = false;
+  }
 });
 
 document.addEventListener("mousedown", e => {
-  if (e.button === 0) {
+  if (!isMobile && e.button === 0) {
+    fireBullet();
+  }
+});
+
+// Mobile Joystick und Schuss-Button
+const joystickContainer = document.getElementById("joystick-container");
+const joystick = document.getElementById("joystick");
+const shootButton = document.getElementById("shoot-button");
+
+let isDragging = false;
+let startX, startY;
+let initialJoystickX, initialJoystickY;
+
+if (isMobile) {
+  joystick.addEventListener("touchstart", (e) => {
+    e.preventDefault(); // Verhindert Scrolling
+    isDragging = true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    initialJoystickX = joystick.offsetLeft;
+    initialJoystickY = joystick.offsetTop;
+  });
+
+  document.addEventListener("touchmove", (e) => {
+    if (!isDragging) return;
+    e.preventDefault();
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+
+    let deltaX = currentX - startX;
+    let deltaY = currentY - startY;
+
+    const maxRadius = joystickContainer.clientWidth / 2 - joystick.clientWidth / 2;
+    const distance = Math.hypot(deltaX, deltaY);
+
+    if (distance > maxRadius) {
+      const angle = Math.atan2(deltaY, deltaX);
+      deltaX = Math.cos(angle) * maxRadius;
+      deltaY = Math.sin(angle) * maxRadius;
+    }
+
+    joystick.style.left = `${initialJoystickX + deltaX}px`;
+    joystick.style.top = `${initialJoystickY + deltaY}px`;
+
+    // Raumschiff-Winkel basierend auf Joystick-Position anpassen
+    const joystickCenterX = joystickContainer.offsetLeft + joystickContainer.clientWidth / 2;
+    const joystickCenterY = joystickContainer.offsetTop + joystickContainer.clientHeight / 2;
+    const currentJoystickX = joystick.offsetLeft + joystick.clientWidth / 2;
+    const currentJoystickY = joystick.offsetTop + joystick.clientHeight / 2;
+
+    ship.angle = Math.atan2(currentJoystickY - joystickCenterY, currentJoystickX - joystickCenterX);
+  });
+
+  document.addEventListener("touchend", () => {
+    isDragging = false;
+    // Joystick in die Mitte zurücksetzen
+    joystick.style.left = `${joystickContainer.clientWidth / 2 - joystick.clientWidth / 2}px`;
+    joystick.style.top = `${joystickContainer.clientHeight / 2 - joystick.clientHeight / 2}px`;
+  });
+
+  shootButton.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    fireBullet();
+  });
+}
+
+function fireBullet() {
     bullets.push(new Bullet(ship.x, ship.y, ship.angle));
     if (ship.doubleShot) {
       bullets.push(new Bullet(ship.x, ship.y, ship.angle + 0.1));
       bullets.push(new Bullet(ship.x, ship.y, ship.angle - 0.1));
     }
-  }
-});
+}
 </script>
 </body>
 </html>
