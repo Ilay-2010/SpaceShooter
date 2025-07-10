@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -470,22 +471,129 @@ class Enemy {
       this.x = -50;
       this.y = Math.random() * canvas.height;
     }
+    
     this.radius = 20;
     this.speed = 1.2;
     this.angle = 0;
+    
+    // Neue Eigenschaften für natürlichere Bewegung
+    this.wanderAngle = Math.random() * Math.PI * 2;
+    this.wanderSpeed = 0.03;
+    this.lastWanderChange = 0;
+    
+    // Eigenschaften für Laser-Ausweichen
+    this.avoidanceStrength = 0.8;
+    this.detectionRange = 400;
+    this.panicMode = false;
+    this.panicTimer = 0;
   }
 
   update(target) {
-    this.angle = Math.atan2(target.y - this.y, target.x - this.x);
-    this.x += Math.cos(this.angle) * this.speed;
-    this.y += Math.sin(this.angle) * this.speed;
+    // Basis-Richtung zum Spieler
+    const baseAngle = Math.atan2(target.y - this.y, target.x - this.x);
+    
+    // Wandering-Effekt für natürlichere Bewegung
+    this.lastWanderChange++;
+    if (this.lastWanderChange > 30) { // Alle 30 Frames Richtung leicht ändern
+      this.wanderAngle += (Math.random() - 0.5) * this.wanderSpeed;
+      this.lastWanderChange = 0;
+    }
+    
+    // Laser-Ausweichen berechnen
+    let avoidanceAngle = 0;
+    let dangerLevel = 0;
+    
+    // Alle Laser auf Bedrohung prüfen
+    for (let bullet of bullets) {
+      const distToLaser = Math.sqrt(
+        Math.pow(bullet.x - this.x, 2) + 
+        Math.pow(bullet.y - this.y, 2)
+      );
+      
+      if (distToLaser < this.detectionRange) {
+        // Vorhersage: Wo wird der Laser in ein paar Frames sein?
+        const futureX = bullet.x + bullet.vel.x * 5;
+        const futureY = bullet.y + bullet.vel.y * 5;
+        const futureDistance = Math.sqrt(
+          Math.pow(futureX - this.x, 2) + 
+          Math.pow(futureY - this.y, 2)
+        );
+        
+        // Wenn der Laser näher kommt = Gefahr!
+        if (futureDistance < distToLaser) {
+          dangerLevel += (this.detectionRange - distToLaser) / this.detectionRange;
+          
+          // Senkrecht zum Laser ausweichen
+          const laserAngle = Math.atan2(bullet.vel.y, bullet.vel.x);
+          const escapeAngle = laserAngle + Math.PI / 2;
+          
+          // Richtung wählen (links oder rechts vom Laser)
+          const cross = Math.sin(escapeAngle - Math.atan2(this.y - bullet.y, this.x - bullet.x));
+          const finalEscapeAngle = cross > 0 ? escapeAngle : escapeAngle + Math.PI;
+          
+          avoidanceAngle += finalEscapeAngle * (this.detectionRange - distToLaser);
+        }
+      }
+    }
+    
+    // Panic-Modus für extreme Situationen
+    if (dangerLevel > 0.7) {
+      this.panicMode = true;
+      this.panicTimer = 60; // 60 Frames panisch bleiben
+    }
+    
+    if (this.panicTimer > 0) {
+      this.panicTimer--;
+      if (this.panicTimer <= 0) {
+        this.panicMode = false;
+      }
+    }
+    
+    // Finale Bewegungsrichtung kombinieren
+    let finalAngle = baseAngle;
+    
+    if (dangerLevel > 0) {
+      // Ausweichen hat Priorität
+      const normalizedAvoidance = avoidanceAngle / dangerLevel;
+      finalAngle = this.panicMode ? 
+        normalizedAvoidance : 
+        baseAngle * (1 - this.avoidanceStrength) + normalizedAvoidance * this.avoidanceStrength;
+    } else {
+      // Normales Wandering
+      finalAngle = baseAngle + Math.sin(this.wanderAngle) * 0.3;
+    }
+    
+    // Geschwindigkeit anpassen
+    let currentSpeed = this.speed;
+    if (this.panicMode) {
+      currentSpeed *= 1.5; // Schneller wenn in Panik
+    } else if (dangerLevel > 0.3) {
+      currentSpeed *= 1.2; // Etwas schneller wenn Gefahr erkannt
+    }
+    
+    // Position aktualisieren
+    this.angle = finalAngle;
+    this.x += Math.cos(finalAngle) * currentSpeed;
+    this.y += Math.sin(finalAngle) * currentSpeed;
+    
+    // Wandering-Winkel kontinuierlich ändern
+    this.wanderAngle += 0.01;
   }
 
   draw() {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.fillStyle = "red";
+    
+    // Farbe je nach Zustand
+    if (this.panicMode) {
+      ctx.fillStyle = "orange"; // Panik = Orange
+    } else if (this.panicTimer > 0) {
+      ctx.fillStyle = "yellow"; // Kurz nach Panik = Gelb
+    } else {
+      ctx.fillStyle = "red"; // Normal = Rot
+    }
+    
     ctx.beginPath();
     ctx.moveTo(0, -20);
     ctx.lineTo(15, 15);
