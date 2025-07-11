@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -74,22 +75,62 @@
 
     /* Shoot Button */
     #shoot-button {
-      width: 100px;
-      height: 100px;
-      background-color: rgba(255, 0, 0, 0.6);
-      border-radius: 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      color: white;
-      font-family: 'Gothic', sans-serif;
-      font-size: 24px;
-      font-weight: bold;
-      text-shadow: 1px 1px 2px black;
-      user-select: none;
-      flex-shrink: 0;
-      margin-left: 20px;
-    }
+  width: 100px;
+  height: 100px;
+  background: transparent;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-family: 'Gothic', sans-serif;
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 0 0 10px #00ffff; /* Cyan-Glow */
+  box-shadow:
+    0 0 20px rgba(0, 255, 255, 0.6), /* Äußerer Cyan-Glow */
+    inset 0 0 15px rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(0, 255, 255, 0.5); /* Cyan-Rand */
+  position: relative;
+  overflow: hidden;
+  transition: all 0.1s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+#shoot-button::before {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 255, 255, 0.3) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+#shoot-button:active {
+  transform: scale(0.95);
+  box-shadow:
+    0 0 30px rgba(0, 255, 255, 0.8), /* Intensiverer Glow */
+    inset 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+#shoot-button:active::before {
+  opacity: 0.6; /* Stärkerer Lichteffekt */
+}
+
+/* Responsive Anpassungen */
+@media (max-width: 600px) {
+  #shoot-button {
+    width: 80px;
+    height: 80px;
+    font-size: 20px;
+  }
+}
 
     /* Game Over Screen */
     #game-over-screen {
@@ -378,13 +419,74 @@ class Ship {
     ctx.fill();
     ctx.restore();
 
-    if (shieldActive) {
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius + 10, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(0, 200, 255, 0.7)";
-      ctx.lineWidth = 3;
-      ctx.stroke();
+   if (shieldActive) {
+  ctx.save();
+  ctx.translate(this.x, this.y);
+  
+  // Animationszeit für Effekte
+  const time = Date.now() * 0.005;
+  
+  // Haupt-Schild mit pulsierendem Effekt
+  const pulseFactor = Math.sin(time * 2) * 0.2 + 1;
+  const shieldRadius = (this.radius + 10) * pulseFactor;
+  
+  // Gradient für den Schild
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, shieldRadius);
+  gradient.addColorStop(0, "rgba(0, 200, 255, 0.1)");
+  gradient.addColorStop(0.7, "rgba(0, 150, 255, 0.4)");
+  gradient.addColorStop(1, "rgba(0, 100, 255, 0.8)");
+  
+  // Äußerer Schild-Ring mit Füllung
+  ctx.beginPath();
+  ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  
+  // Langsam rotierende Hexagon-Struktur
+  ctx.strokeStyle = "rgba(0, 200, 255, 0.6)";
+  ctx.lineWidth = 1.5;
+  
+  const hexRadius = this.radius + 8;
+  const rotationAngle = time * 0.3; // Sehr langsame Rotation
+  
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3 + rotationAngle;
+    const x = Math.cos(angle) * hexRadius;
+    const y = Math.sin(angle) * hexRadius;
+    
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
     }
+  }
+  ctx.closePath();
+  ctx.stroke();
+  
+  // Inneres Hexagon für mehr Struktur
+  ctx.strokeStyle = "rgba(0, 150, 255, 0.4)";
+  ctx.lineWidth = 1;
+  
+  const innerHexRadius = this.radius + 4;
+  
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3 + rotationAngle;
+    const x = Math.cos(angle) * innerHexRadius;
+    const y = Math.sin(angle) * innerHexRadius;
+    
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.closePath();
+  ctx.stroke();
+  
+  ctx.restore();
+}
   }
 }
 
@@ -608,45 +710,145 @@ class PowerUp {
   constructor(type) {
     this.x = Math.random() * canvas.width;
     this.y = Math.random() * canvas.height;
-    this.type = type;
-    this.radius = 20;
+    this.type = type;  // "life", "double" oder "shield"
+    this.radius = 22;
+    this.pulseTime = 0; // Für Pulseffekt
+    this.glowIntensity = 0;
   }
 
   draw() {
     ctx.save();
     ctx.translate(this.x, this.y);
-    if (this.type === "life") {
-      ctx.fillStyle = "lime";
-      ctx.beginPath();
-      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "white";
-      ctx.font = "16px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("+", 0, 6);
-    } else if (this.type === "double") {
-      ctx.fillStyle = "gold";
-      ctx.beginPath();
-      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "black";
-      ctx.font = "14px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("2x", 0, 6);
-    } else if (this.type === "shield") {
-      ctx.fillStyle = "blue";
-      ctx.beginPath();
-      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "white";
-      ctx.font = "16px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("S", 0, 6);
-    }
+    
+    // Pulseffekt
+    this.pulseTime += 0.1;
+    this.glowIntensity = Math.sin(this.pulseTime) * 0.3 + 0.7;
+    
+    // Glüheffekt (Schatten)
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = this.getGlowColor();
+    
+    // Äußerer Ring für mehr Tiefe
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius + 2, 0, Math.PI * 2);
+    ctx.fillStyle = this.getOuterRingColor();
+    ctx.fill();
+    
+    // Hauptkreis mit Gradient
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius);
+    gradient.addColorStop(0, this.getGradientCenter());
+    gradient.addColorStop(1, this.getGradientEdge());
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    
+    // Icon zeichnen
+    ctx.shadowBlur = 0; // Schatten für Icon ausschalten
+    this.drawIcon();
+    
     ctx.restore();
   }
+  
+  getGlowColor() {
+    if (this.type === "life") return `rgba(0, 255, 0, ${this.glowIntensity})`;
+    if (this.type === "double") return `rgba(255, 215, 0, ${this.glowIntensity})`;
+    if (this.type === "shield") return `rgba(0, 150, 255, ${this.glowIntensity})`;
+  }
+  
+  getOuterRingColor() {
+    if (this.type === "life") return "#00AA00";
+    if (this.type === "double") return "#B8860B";
+    if (this.type === "shield") return "#0066CC";
+  }
+  
+  getGradientCenter() {
+    if (this.type === "life") return "#00FF00";
+    if (this.type === "double") return "#FFD700";
+    if (this.type === "shield") return "#1E90FF";
+  }
+  
+  getGradientEdge() {
+    if (this.type === "life") return "#00CC00";
+    if (this.type === "double") return "#DAA520";
+    if (this.type === "shield") return "#0080FF";
+  }
+  
+  drawIcon() {
+    ctx.strokeStyle = "white";
+    ctx.fillStyle = "white";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    
+    if (this.type === "life") {
+      // Plus-Icon
+      ctx.beginPath();
+      // Vertikaler Balken
+      ctx.rect(-2, -8, 4, 16);
+      ctx.fill();
+      
+      // Horizontaler Balken
+      ctx.beginPath();
+      ctx.rect(-8, -2, 16, 4);
+      ctx.fill();
+      
+    } else if (this.type === "double") {
+      // Doppelpfeil-Icon mit "3x"
+      ctx.beginPath();
+      // Erster Pfeil
+      ctx.moveTo(-8, -2);
+      ctx.lineTo(-3, -7);
+      ctx.moveTo(-8, -2);
+      ctx.lineTo(-3, 3);
+      ctx.moveTo(-8, -2);
+      ctx.lineTo(2, -2);
+      
+      // Zweiter Pfeil
+      ctx.moveTo(2, -2);
+      ctx.lineTo(7, -7);
+      ctx.moveTo(2, -2);
+      ctx.lineTo(7, 3);
+      ctx.moveTo(2, -2);
+      ctx.lineTo(12, -2);
+      
+      ctx.stroke();
+      
+      // "3x" Text
+      ctx.font = "bold 10px Arial";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "white";
+      ctx.fillText("3x", 0, 12);
+      
+    } else if (this.type === "shield") {
+      // Schild-Icon
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.lineTo(-8, -6);
+      ctx.lineTo(-8, 2);
+      ctx.lineTo(-4, 6);
+      ctx.lineTo(0, 10);
+      ctx.lineTo(4, 6);
+      ctx.lineTo(8, 2);
+      ctx.lineTo(8, -6);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Schild-Details
+      ctx.strokeStyle = "#0066CC";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -7);
+      ctx.lineTo(0, 7);
+      ctx.moveTo(-5, -3);
+      ctx.lineTo(5, -3);
+      ctx.moveTo(-3, 1);
+      ctx.lineTo(3, 1);
+      ctx.stroke();
+    }
+  }
 }
-
 // --- SPIEL OBJEKTE ---
 const ship = new Ship();
 const bullets = [];
